@@ -1,6 +1,7 @@
 % Space runt punkt valfritt.
 DOWN . UP.DOWN. DOWN.
 % Rader kan vara tomma
+
 % radbrytning/space/tabb för
 % att göra koden mer läslig.
 REP 3 "COLOR #FF0000.

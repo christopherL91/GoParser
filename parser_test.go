@@ -7,10 +7,9 @@ import (
 	"testing"
 )
 
+// Functional program
 func TestExample1(t *testing.T) {
 	expected := []toki.Token{
-		COMMENT,
-		COMMENT,
 		DOWN,
 		DOT,
 		FORW,
@@ -38,28 +37,40 @@ func TestExample1(t *testing.T) {
 		NUMBER,
 		DOT,
 	}
-
 	input, err := ioutil.ReadFile("example1.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := toki.NewScanner(defintions)
-	s.SetInput(string(input))
-	Convey("Testing that example1.txt is a valid program", t, func() {
-		for _, e := range expected {
-			r := s.Next()
-			if e != r.Token {
-				t.Fatalf("expected %v, got %v", e, r.Token)
-			} else {
-				t.Log(r)
-			}
+	noComments := removeComments.ReplaceAllString(string(input), "")
+	s.SetInput(noComments)
+	buffer := []*toki.Result{} // Holds all the tokens.
+	Convey("Example1: Tokenize program using lexer", t, func() {
+		for r := s.Next(); r.Token != toki.EOF; r = s.Next() {
+			buffer = append(buffer, r) // Append new token to list.
 		}
+		So(buffer, ShouldNotBeEmpty)
+		Convey("Should be able to compare result with expected", func() {
+			if len(buffer) != len(expected) {
+				t.FailNow()
+			} else {
+				for i := 0; i < len(buffer); i++ {
+					if buffer[i].Token != expected[i] {
+						t.FailNow()
+					}
+				}
+			}
+		})
+		Convey("Program should be valid", func() {
+			err := validateBuffer(buffer)
+			So(err, ShouldBeNil)
+		})
 	})
 }
 
+// Functional program
 func TestExample2(t *testing.T) {
 	expected := []toki.Token{
-		COMMENT,
 		DOWN,
 		DOT,
 		UP,
@@ -68,9 +79,6 @@ func TestExample2(t *testing.T) {
 		DOT,
 		DOWN,
 		DOT,
-		COMMENT,
-		COMMENT,
-		COMMENT,
 		REP,
 		NUMBER,
 		STRING,
@@ -93,9 +101,7 @@ func TestExample2(t *testing.T) {
 		NUMBER,
 		DOT,
 		STRING,
-		COMMENT,
 		COLORKEYWORD,
-		COMMENT,
 		COLOR,
 		DOT,
 		REP,
@@ -104,21 +110,75 @@ func TestExample2(t *testing.T) {
 		NUMBER,
 		DOT,
 	}
-
 	input, err := ioutil.ReadFile("example2.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := toki.NewScanner(defintions)
-	s.SetInput(string(input))
-	Convey("Testing that example2.txt is a valid program", t, func() {
-		for _, e := range expected {
-			r := s.Next()
-			if e != r.Token {
-				t.Fatalf("expected %v, got %v", e, r.Token)
-			} else {
-				t.Log(r)
-			}
+	noComments := removeComments.ReplaceAllString(string(input), "")
+	s.SetInput(noComments)
+	buffer := []*toki.Result{} // Holds all the tokens.
+	Convey("Example2: Tokenize program using lexer", t, func() {
+		for r := s.Next(); r.Token != toki.EOF; r = s.Next() {
+			buffer = append(buffer, r) // Append new token to list.
 		}
+		So(buffer, ShouldNotBeEmpty)
+		Convey("Should be able to compare result with expected", func() {
+			if len(buffer) != len(expected) {
+				t.FailNow()
+			} else {
+				for i := 0; i < len(buffer); i++ {
+					if buffer[i].Token != expected[i] {
+						t.FailNow()
+					}
+				}
+			}
+		})
+		Convey("Program should be valid", func() {
+			err := validateBuffer(buffer)
+			So(err, ShouldBeNil)
+		})
+	})
+}
+
+// Broken program
+func TestExample3(t *testing.T) {
+	expected := []toki.Token{
+		COLORKEYWORD,
+		NUMBER,
+		FORW,
+		NUMBER,
+		DOT,
+	}
+	input, err := ioutil.ReadFile("example3.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := toki.NewScanner(defintions)
+	noComments := removeComments.ReplaceAllString(string(input), "")
+	s.SetInput(noComments)
+	buffer := []*toki.Result{} // Holds all the tokens.
+	Convey("Example3: Tokenize program using lexer", t, func() {
+		for r := s.Next(); r.Token != toki.EOF; r = s.Next() {
+			buffer = append(buffer, r) // Append new token to list.
+		}
+		t.Log("Buffer:", buffer)
+		So(buffer, ShouldNotBeEmpty)
+		t.Log("Length of buffer", len(buffer))
+		Convey("Should be able to compare result with expected", func() {
+			if len(buffer) != len(expected) {
+				t.FailNow()
+			} else {
+				for i := 0; i < len(buffer); i++ {
+					if buffer[i].Token != expected[i] {
+						t.FailNow()
+					}
+				}
+			}
+		})
+		Convey("Program should be valid", func() {
+			err := validateBuffer(buffer)
+			So(err, ShouldNotBeNil)
+		})
 	})
 }
