@@ -162,9 +162,7 @@ func TestExample3(t *testing.T) {
 		for r := s.Next(); r.Token != toki.EOF; r = s.Next() {
 			buffer = append(buffer, r) // Append new token to list.
 		}
-		t.Log("Buffer:", buffer)
 		So(buffer, ShouldNotBeEmpty)
-		t.Log("Length of buffer", len(buffer))
 		Convey("Should be able to compare result with expected", func() {
 			if len(buffer) != len(expected) {
 				t.FailNow()

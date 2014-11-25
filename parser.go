@@ -1,21 +1,30 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
-	"github.com/christopherL91/Parser/toki"
 	"io/ioutil"
 	"log"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/christopherL91/Parser/toki"
 )
 
+// Used for evaluation
 type Instruction struct {
 	Name         string
 	Num          int
-	Color        string
-	Instructions []Instruction
+	Color        Color
+	Instructions []Instruction // Used within REP
+}
+
+// Defines a color using RGB color system.
+type Color struct {
+	Red, Green, Blue uint8
 }
 
 const (
@@ -35,14 +44,16 @@ const (
 )
 
 var (
-	defintions = []toki.Def{
+	debug          bool
+	removeComments = regexp.MustCompile("%[^\\n]*")
+	defintions     = []toki.Def{
 		{Token: STRING, Pattern: `\"`},
 		{Token: FORW, Pattern: `FORW\s+`},
 		{Token: LEFT, Pattern: `LEFT\s+`},
 		{Token: DOWN, Pattern: "DOWN"},
 		{Token: BACK, Pattern: "BACK"},
 		{Token: REP, Pattern: `REP\s+`},
-		{Token: NUMBER, Pattern: "[0-9]+"},
+		{Token: NUMBER, Pattern: `[0-9]+`},
 		{Token: COLORKEYWORD, Pattern: `COLOR\s+`},
 		{Token: RIGHT, Pattern: "RIGHT"},
 		{Token: UP, Pattern: "UP"},
@@ -50,8 +61,6 @@ var (
 		{Token: DOT, Pattern: `\.`},
 		{Token: OTHER, Pattern: `.*`},
 	}
-	removeComments = regexp.MustCompile("%[^\\n]*")
-	debug          bool
 )
 
 func init() {
@@ -83,6 +92,7 @@ func main() {
 }
 
 func prettyPrint(buffer []*toki.Result) {
+	defer fmt.Println()
 	for _, val := range buffer {
 		value := strings.TrimSpace(string(val.Value))
 		switch val.Token {
@@ -112,12 +122,9 @@ func prettyPrint(buffer []*toki.Result) {
 			fmt.Println("COLOR", value)
 		}
 	}
-	fmt.Println()
 }
 
 func validateBuffer(buffer []*toki.Result) error {
-	// instructions := []Instruction{}
-L:
 	for i := 0; i < len(buffer); {
 		switch buffer[i].Token {
 		case UP:
@@ -130,51 +137,63 @@ L:
 			if !(buffer[i+1].Token == DOT) {
 				return syntaxError(buffer[i+1].Pos.Line)
 			}
-			// instruction := Instruction{
-			// 	Name: "DOWN",
-			// 	Num:  toInt(buffer[i+1].Value),
-			// }
-			// instruction = append(instructions, instruction)
 			i += 2
 		case FORW:
+			if len(buffer) <= i+2 {
+				return syntaxError(buffer[i].Pos.Line)
+			}
 			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
 				return syntaxError(buffer[i+1].Pos.Line)
 			}
+			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
 				return syntaxError(buffer[i+2].Pos.Line)
 			}
-			// instruction := Instruction{
-			// 	Name: "Forward",
-			// 	Num:  toInt(buffer[i+1].Value),
-			// }
-			// instructions = append(instructions, instruction)
 			i += 3
 		case LEFT:
+			if len(buffer) <= i+2 {
+				return syntaxError(buffer[i].Pos.Line)
+			}
+			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
 				return syntaxError(buffer[i+1].Pos.Line)
 			}
+			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
 				return syntaxError(buffer[i+2].Pos.Line)
 			}
 			i += 3
 		case BACK:
+			if len(buffer) <= i+2 {
+				return syntaxError(buffer[i].Pos.Line)
+			}
+			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
 				return syntaxError(buffer[i+1].Pos.Line)
 			}
+			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
 				return syntaxError(buffer[i+2].Pos.Line)
 			}
 			i += 3
 		case RIGHT:
+			if len(buffer) <= i+2 {
+				return syntaxError(buffer[i].Pos.Line)
+			}
+			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
 				return syntaxError(buffer[i+1].Pos.Line)
 			}
+			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
 				return syntaxError(buffer[i+2].Pos.Line)
 			}
 			i += 3
 		case COLORKEYWORD:
+			if len(buffer) <= i+2 {
+				return syntaxError(buffer[i].Pos.Line)
+			}
 			// Next token must be COLOR
 			if !(buffer[i+1].Token == COLOR) {
 				return syntaxError(buffer[i+1].Pos.Line)
@@ -183,37 +202,45 @@ L:
 			if !(buffer[i+2].Token == DOT) {
 				return syntaxError(buffer[i+2].Pos.Line)
 			}
-			// instructions = append(instructions, []Instruction{ColorInstruction{red: 255,green:0,blue:255}})
 			i += 3
 		case REP:
-			// Not implemented
-			break L
-			// 	if buffer[i+2].Token == STRING {
-			// 		i += 3
-			// 		for {
+			if len(buffer) <= i+3 {
+				return syntaxError(buffer[i].Pos.Line)
+			}
+			if !(buffer[i+1].Token == NUMBER) {
+				return syntaxError(buffer[i+1].Pos.Line)
+			}
+			if !(buffer[i+2].Token == STRING) {
+				return syntaxError(buffer[i+2].Pos.Line)
+			}
+			buf := bytes.NewBuffer(buffer[i+1].Value) // buffer[i+1].Value is []byte
+			repetitions, err := binary.ReadVarint(buf)
+			if err != nil {
+				// This should not happen, because of regexp check.
+				return syntaxError(buffer[i+1].Pos.Line)
+			}
+			/*
+					repetitions
+				------------------------------
+				REP NUMBER     |   STRING .... STRING
+				NOW	CHECKED    |   CHECKED
 
-			// 			if buffer[i].Token == STRING {
-			// 				instruction := Instruction{
-			// 					Name:         "REP",
-			// 					Instructions: parsed_instructions,
-			// 				}
-			// 				break
-			// 			}
-			// 		}
-			// 	} else {
-			// 		instruction := Instruction{
-			// 			Name:         "REP",
-			// 			Instructions: []Instruction{parsed_instruction},
-			// 		}
-			// 	}
-			//
+				* Move 3 tokens
+			*/
+
+			i += 3
+			for {
+				if buffer[i].Token == STRING {
+					fmt.Println("String is now complete")
+					break
+				}
+			}
 		default:
 			// Found token that's invalid
 			return syntaxError(buffer[i].Pos.Line)
 		}
 	}
-	// Everything seems okey!
-	return nil
+	return nil // Validation complete. Everything seems to work!
 }
 
 func evaluateProgram(program []Instruction) string {
