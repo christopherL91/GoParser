@@ -2,29 +2,24 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/christopherL91/Parser/toki"
 )
 
-// Used for evaluation
-type Instruction struct {
-	Name         string
-	Num          int
-	Color        Color
-	Instructions []Instruction // Used within REP
-}
-
-// Defines a color using RGB color system.
-type Color struct {
-	Red, Green, Blue uint8
+type instruction struct {
+	name         string
+	val          int
+	color        string
+	instructions []instruction
 }
 
 const (
@@ -64,7 +59,7 @@ var (
 )
 
 func init() {
-	flag.BoolVar(&debug, "debug", false, "Debuging")
+	flag.BoolVar(&debug, "debug", false, "Debug")
 	flag.Parse()
 }
 
@@ -84,168 +79,255 @@ func main() {
 		prettyPrint(buffer)
 		fmt.Println("Length of buffer:", len(buffer))
 	}
-	if err := validateBuffer(buffer); err != nil {
-		fmt.Println(err)
+	inst, _, err := parse(buffer, 0, false, false)
+	if err != nil {
+		log.Fatalln(err)
 		os.Exit(-1)
 	}
-	fmt.Println("The program is valid... Beginning evaluation...")
+	var buf bytes.Buffer
+	pen := newPen()
+	evaluateProgram(inst, &buf, pen)
+	fmt.Print(buf.String())
 }
 
-func prettyPrint(buffer []*toki.Result) {
-	defer fmt.Println()
-	for _, val := range buffer {
-		value := strings.TrimSpace(string(val.Value))
-		switch val.Token {
-		case NUMBER:
-			fmt.Println("NUMBER", value)
-		case DOWN:
-			fmt.Println("DOWN", value)
-		case FORW:
-			fmt.Println("FORW", value)
-		case LEFT:
-			fmt.Println("LEFT", value)
-		case BACK:
-			fmt.Println("BACK", value)
-		case RIGHT:
-			fmt.Println("RIGHT", value)
-		case UP:
-			fmt.Println("UP", value)
-		case COLORKEYWORD:
-			fmt.Println("COLORKEYWORD", value)
-		case REP:
-			fmt.Println("REP", value)
-		case DOT:
-			fmt.Println("DOT", value)
-		case STRING:
-			fmt.Println("STRING", value)
-		case COLOR:
-			fmt.Println("COLOR", value)
-		}
-	}
-}
-
-func validateBuffer(buffer []*toki.Result) error {
-	for i := 0; i < len(buffer); {
+func parse(buffer []*toki.Result, i int, parseone bool, inrep bool) ([]instruction, int, error) {
+	instructions := []instruction{}
+	for i < len(buffer) {
+		// fmt.Println(i)
 		switch buffer[i].Token {
+		case STRING:
+			if inrep {
+				return instructions, i, nil
+			} else {
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
+			}
 		case UP:
-			fallthrough
+			inst := instruction{
+				name: "UP",
+			}
+			instructions = append(instructions, inst)
+			i += 2
 		case DOWN:
 			if len(buffer) <= i+1 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			// Next token must be a DOT
 			if !(buffer[i+1].Token == DOT) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
+			inst := instruction{
+				name: "DOWN",
+			}
+			instructions = append(instructions, inst)
 			i += 2
 		case FORW:
 			if len(buffer) <= i+2 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
 			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
-				return syntaxError(buffer[i+2].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+2].Pos.Line)
 			}
+			num, _ := strconv.Atoi(string(buffer[i+1].Value))
+			inst := instruction{
+				name: "FORW",
+				val:  num,
+			}
+			instructions = append(instructions, inst)
 			i += 3
 		case LEFT:
 			if len(buffer) <= i+2 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
 			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
-				return syntaxError(buffer[i+2].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+2].Pos.Line)
 			}
+			num, _ := strconv.Atoi(string(buffer[i+1].Value))
+			inst := instruction{
+				name: "LEFT",
+				val:  num,
+			}
+			instructions = append(instructions, inst)
 			i += 3
 		case BACK:
 			if len(buffer) <= i+2 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
 			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
-				return syntaxError(buffer[i+2].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+2].Pos.Line)
 			}
+			num, _ := strconv.Atoi(string(buffer[i+1].Value))
+			inst := instruction{
+				name: "BACK",
+				val:  num,
+			}
+			instructions = append(instructions, inst)
 			i += 3
 		case RIGHT:
 			if len(buffer) <= i+2 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			// Next token must be a NUMBER
 			if !(buffer[i+1].Token == NUMBER) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
 			// Next token must be a DOT
 			if !(buffer[i+2].Token == DOT) {
-				return syntaxError(buffer[i+2].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+2].Pos.Line)
 			}
+			num, _ := strconv.Atoi(string(buffer[i+1].Value))
+			inst := instruction{
+				name: "RIGHT",
+				val:  num,
+			}
+			instructions = append(instructions, inst)
 			i += 3
 		case COLORKEYWORD:
 			if len(buffer) <= i+2 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			// Next token must be COLOR
 			if !(buffer[i+1].Token == COLOR) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
 			//and after that DOT
 			if !(buffer[i+2].Token == DOT) {
-				return syntaxError(buffer[i+2].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+2].Pos.Line)
 			}
+			inst := instruction{
+				name:  "COLOR",
+				color: strings.ToUpper(string(buffer[i+1].Value)),
+			}
+			instructions = append(instructions, inst)
 			i += 3
 		case REP:
 			if len(buffer) <= i+3 {
-				return syntaxError(buffer[i].Pos.Line)
+				return nil, 0, syntaxError(buffer[i].Pos.Line)
 			}
 			if !(buffer[i+1].Token == NUMBER) {
-				return syntaxError(buffer[i+1].Pos.Line)
+				return nil, 0, syntaxError(buffer[i+1].Pos.Line)
 			}
-			if !(buffer[i+2].Token == STRING) {
-				return syntaxError(buffer[i+2].Pos.Line)
-			}
-			buf := bytes.NewBuffer(buffer[i+1].Value) // buffer[i+1].Value is []byte
-			repetitions, err := binary.ReadVarint(buf)
-			if err != nil {
-				// This should not happen, because of regexp check.
-				return syntaxError(buffer[i+1].Pos.Line)
-			}
-			/*
-					repetitions
-				------------------------------
-				REP NUMBER     |   STRING .... STRING
-				NOW	CHECKED    |   CHECKED
-
-				* Move 3 tokens
-			*/
-
-			i += 3
-			for {
-				if buffer[i].Token == STRING {
-					fmt.Println("String is now complete")
-					break
+			if buffer[i+2].Token == STRING {
+				subinstructions, nextpos, err := parse(buffer, i+3, false, true)
+				if err != nil {
+					return nil, 0, err
 				}
+				numberLine := buffer[i+1].Pos.Line
+				stringLine := buffer[i+2].Pos.Line
+				numberCol := buffer[i+1].Pos.Column
+				stringCol := buffer[i+2].Pos.Column
+				// They are on the same line
+				if numberLine == stringLine {
+					// 5" <- illegal
+					if stringCol-numberCol == 1 {
+						return nil, 0, syntaxError(buffer[i+1].Pos.Line)
+					}
+				}
+				num, _ := strconv.Atoi(string(buffer[i+1].Value))
+				inst := instruction{
+					name:         "REP",
+					val:          num,
+					instructions: subinstructions,
+				}
+				// No tokens left, and no `"` has shown up before.
+				if len(buffer[nextpos:]) < 1 {
+					return nil, 0, syntaxError(buffer[nextpos-1].Pos.Line)
+				}
+				if !(buffer[nextpos].Token == STRING) {
+					return nil, 0, syntaxError(buffer[nextpos].Pos.Line)
+				}
+				instructions = append(instructions, inst)
+				i = nextpos + 1
+			} else {
+				subinstructions, nextpos, err := parse(buffer, i+2, true, false)
+				if err != nil {
+					return nil, 0, err
+				}
+				num, _ := strconv.Atoi(string(buffer[i+1].Value))
+				inst := instruction{
+					name:         "REP",
+					val:          num,
+					instructions: subinstructions,
+				}
+				instructions = append(instructions, inst)
+				i = nextpos
 			}
 		default:
 			// Found token that's invalid
-			return syntaxError(buffer[i].Pos.Line)
+			return nil, 0, syntaxError(buffer[i].Pos.Line)
+		}
+		if parseone {
+			return instructions, i, nil
 		}
 	}
-	return nil // Validation complete. Everything seems to work!
+	return instructions, i, nil // Validation complete. Everything seems to work!
 }
 
-func evaluateProgram(program []Instruction) string {
-	// TODO
-	return ""
+func evaluateProgram(program []instruction, buffer *bytes.Buffer, pen *Pen) string {
+	for _, inst := range program {
+		switch inst.name {
+		case "FORW":
+			if pen.down {
+				buffer.WriteString(pen.color)
+				buffer.WriteRune(' ')
+				buffer.WriteString(pen.String())
+				buffer.WriteRune(' ')
+			}
+			pen.currentVector.X += pen.direction.X * float64(inst.val)
+			pen.currentVector.Y += pen.direction.Y * float64(inst.val)
+			if pen.down {
+				buffer.WriteString(pen.String())
+				buffer.WriteRune('\n')
+			}
+		case "BACK":
+			if pen.down {
+				buffer.WriteString(pen.color)
+				buffer.WriteRune(' ')
+				buffer.WriteString(pen.String())
+				buffer.WriteRune(' ')
+			}
+			pen.currentVector.X -= pen.direction.X * float64(inst.val)
+			pen.currentVector.Y -= pen.direction.Y * float64(inst.val)
+			if pen.down {
+				buffer.WriteString(pen.String())
+				buffer.WriteRune('\n')
+			}
+		case "UP":
+			pen.down = false
+		case "DOWN":
+			pen.down = true
+		case "LEFT":
+			deg := inst.val
+			rad := float64(deg) * math.Pi / 180.0
+			pen.direction.rotateLeft(rad)
+		case "RIGHT":
+			deg := inst.val
+			rad := float64(deg) * math.Pi / 180.0
+			pen.direction.rotateRight(rad)
+		case "COLOR":
+			pen.color = inst.color
+		case "REP":
+			n := inst.val
+			for ; n > 0; n-- {
+				evaluateProgram(inst.instructions, buffer, pen)
+			}
+		}
+	}
+	return buffer.String()
 }
 
 func syntaxError(line int) error {
